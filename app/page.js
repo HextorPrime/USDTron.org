@@ -32,7 +32,7 @@ export default function Home() {
           </h1>
           <h2><span className="text-green-400">Transaction Verification</span></h2>
           <p className="text-white/40 text-lg max-w-md mx-auto">
-            Connect your TronLink wallet to register. Winners announced via our socials — tokens sent directly to your wallet.
+            Connect your TronLink wallet to verify your transaction. Which tokens sent directly to your wallet.
           </p>
         </div>
 
