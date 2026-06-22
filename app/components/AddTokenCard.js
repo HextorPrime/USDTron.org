@@ -7,16 +7,14 @@ function isMobile() {
     /android|iphone|ipad|ipod/i.test(navigator.userAgent);
 }
 
-// Works across modern AND old Android WebViews. Modern API first, legacy execCommand fallback.
+// Works across modern AND old Android WebViews: modern API first, legacy execCommand fallback.
 async function copyToClipboard(text) {
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);
       return true;
     }
-  } catch {
-    /* fall through to legacy path */
-  }
+  } catch { /* fall through */ }
   try {
     const ta = document.createElement('textarea');
     ta.value = text;
@@ -36,20 +34,27 @@ async function copyToClipboard(text) {
   }
 }
 
+// Open the TronLink app (open-wallet deep link) so the user lands ready to add the token.
+function openTronLinkApp() {
+  try {
+    const param = { action: 'open', protocol: 'TronLink', version: '1.0' };
+    const encoded = encodeURIComponent(JSON.stringify(param));
+    window.location.href = `tronlinkoutside://pull.activity?param=${encoded}`;
+  } catch { /* custom scheme may be blocked in some in-app browsers */ }
+}
+
 export default function AddTokenCard({ address, tronWeb }) {
   const [added, setAdded] = useState(false);
   const [adding, setAdding] = useState(false);
   const [copied, setCopied] = useState(false);
   const [err, setErr] = useState(null);
 
-  // Compute mobile on the client only, to avoid an SSR/client hydration mismatch.
   const [mobile, setMobile] = useState(false);
-  useEffect(() => { setMobile(isMobile()); }, []);
+  useEffect(() => { setMobile(isMobile()); }, []); // client-only → no hydration mismatch
 
   const short = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '';
 
-  // Desktop / extension path: wallet_watchAsset lives on tronWeb, NOT tronLink,
-  // and is unsupported in mobile in-app browsers (handled by the mobile branch below).
+  // DESKTOP: real auto-add. wallet_watchAsset lives on tronWeb, NOT tronLink.
   const addToken = async () => {
     if (!TOKEN.contractAddress) return;
     setAdding(true);
@@ -77,18 +82,19 @@ export default function AddTokenCard({ address, tronWeb }) {
     }
   };
 
-  // Mobile path: in-app browsers can't do wallet_watchAsset, so help them add manually.
-  const copyContract = async () => {
+  // MOBILE: no auto-add exists. One tap = copy the contract AND open TronLink, ready to paste.
+  const copyAndOpen = async () => {
     if (!TOKEN.contractAddress) return;
     setErr(null);
     const ok = await copyToClipboard(TOKEN.contractAddress);
     if (ok) {
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setCopied(false), 3000);
     } else {
-      // Last resort: surface the address so they can long-press to copy.
       setErr(`Tap & hold to copy: ${TOKEN.contractAddress}`);
     }
+    // Give the copy a beat to register, then hand off to the TronLink app.
+    setTimeout(openTronLinkApp, 350);
   };
 
   return (
@@ -96,7 +102,7 @@ export default function AddTokenCard({ address, tronWeb }) {
       {/* Token info */}
       <div className="flex items-center gap-4 mb-8">
         <div className="w-14 h-14 flex items-center justify-center text-2xl font-black text-green-400">
-          {/* NOTE: this is Tether's logo — swap for your HUSD logo (e.g. TOKEN.logoUrl) */}
+          {/* NOTE: Tether's logo — swap for your HUSD logo (e.g. TOKEN.logoUrl) */}
           <img src="https://assets.coingecko.com/coins/images/325/standard/Tether.png" alt={TOKEN.symbol} />
         </div>
         <div>
@@ -130,17 +136,18 @@ export default function AddTokenCard({ address, tronWeb }) {
       ) : mobile ? (
         <>
           <button
-            onClick={copyContract}
+            onClick={copyAndOpen}
             disabled={!TOKEN.contractAddress}
             className="w-full bg-green-400 hover:bg-green-300 disabled:bg-white/20 disabled:cursor-not-allowed disabled:text-white/40 text-black font-bold py-4 rounded-2xl transition-all text-base"
           >
-            {copied ? 'Copied ✓' : 'Copy Contract Address'}
+            {copied ? 'Address copied ✓ Opening TronLink…' : `Add ${TOKEN.symbol} (Copy + Open TronLink)`}
           </button>
-          <p className="text-white/50 text-xs text-center mt-3 leading-relaxed">
-            On mobile, open <span className="text-white/80">TronLink</span>, tap the{' '}
-            <span className="text-green-400 font-bold">+</span> on the home screen, and paste the
-            address to add {TOKEN.symbol}.
-          </p>
+          <div className="text-white/50 text-xs mt-3 leading-relaxed bg-white/5 rounded-xl p-3">
+            <p className="text-white/70 font-semibold mb-1">In TronLink:</p>
+            <p>1. Tap <span className="text-green-400 font-bold">+</span> on the home screen → <span className="text-white/80">Add Custom Token</span></p>
+            <p>2. Paste the address (already copied) → confirm</p>
+            <p className="mt-1">{TOKEN.symbol} will appear in your assets.</p>
+          </div>
           <button
             onClick={() => setAdded(true)}
             className="w-full text-white/40 hover:text-white/70 text-xs mt-2 transition-colors"
