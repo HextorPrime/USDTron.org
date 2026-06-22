@@ -9,8 +9,8 @@ export default function ClaimCard({ tronWeb, address, balance, onClaimed }) {
     <div className="bg-white/10 border border-white/20 backdrop-blur-sm rounded-3xl p-8 w-full max-w-md">
       {/* Token info */}
       <div className="flex items-center gap-4 mb-8">
-        <div className="w-14 h-14 rounded-full bg-green-400/20 border border-green-400/40 flex items-center justify-center text-2xl font-bold text-green-400">
-          Z
+        <div className="w-14 h-14 rounded-full border border-green-400/40 flex items-center justify-center text-2xl font-bold text-green-400">
+          <img src='https://assets.coingecko.com/coins/images/325/standard/Tether.png'/>
         </div>
         <div>
           <p className="text-white font-bold text-xl">{TOKEN.name}</p>
