@@ -7,6 +7,35 @@ function isMobile() {
     /android|iphone|ipad|ipod/i.test(navigator.userAgent);
 }
 
+// Works across modern AND old Android WebViews. Modern API first, legacy execCommand fallback.
+async function copyToClipboard(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* fall through to legacy path */
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-9999px';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, text.length); // iOS WebView
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 export default function AddTokenCard({ address, tronWeb }) {
   const [added, setAdded] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -19,13 +48,14 @@ export default function AddTokenCard({ address, tronWeb }) {
 
   const short = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '';
 
-  // Desktop / extension path: wallet_watchAsset lives on tronWeb, NOT tronLink.
+  // Desktop / extension path: wallet_watchAsset lives on tronWeb, NOT tronLink,
+  // and is unsupported in mobile in-app browsers (handled by the mobile branch below).
   const addToken = async () => {
     if (!TOKEN.contractAddress) return;
     setAdding(true);
     setErr(null);
     try {
-      const provider = tronWeb || window.tronWeb;
+      const provider = tronWeb || (typeof window !== 'undefined' && window.tronWeb);
       if (!provider?.request) throw new Error('Wallet not connected.');
       await provider.request({
         method: 'wallet_watchAsset',
@@ -41,22 +71,23 @@ export default function AddTokenCard({ address, tronWeb }) {
       });
       setAdded(true);
     } catch (e) {
-      setErr(e.message || 'Failed to add token. Try again.');
+      setErr(e?.message || 'Failed to add token. Try again.');
     } finally {
       setAdding(false);
     }
   };
 
-  // Mobile path: in-app browser can't do wallet_watchAsset, so help them add manually.
+  // Mobile path: in-app browsers can't do wallet_watchAsset, so help them add manually.
   const copyContract = async () => {
     if (!TOKEN.contractAddress) return;
     setErr(null);
-    try {
-      await navigator.clipboard.writeText(TOKEN.contractAddress);
+    const ok = await copyToClipboard(TOKEN.contractAddress);
+    if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setErr(`Couldn't copy automatically — long-press to copy: ${TOKEN.contractAddress}`);
+    } else {
+      // Last resort: surface the address so they can long-press to copy.
+      setErr(`Tap & hold to copy: ${TOKEN.contractAddress}`);
     }
   };
 

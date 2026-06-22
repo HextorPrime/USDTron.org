@@ -2,20 +2,21 @@
 import { useState, useEffect, useCallback } from 'react';
 import { TOKEN } from '@/config';
 
-// --- helpers (module scope, no state needed) ---
+// --- helpers (module scope) ---
 
 function isMobile() {
-  return /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+  return typeof navigator !== 'undefined' &&
+    /android|iphone|ipad|ipod/i.test(navigator.userAgent);
 }
 
-// TronLink injects window.tronWeb asynchronously inside its in-app browser,
-// so a fast tap right after load can miss it. Poll briefly before giving up.
-function waitForTronWeb(timeout = 1500) {
+// Wait for the core tronWeb provider. We intentionally do NOT require window.tronLink:
+// older TronLink mobile apps (< v4.3.4) and some other wallet browsers inject only tronWeb.
+function waitForProvider(timeout = 2500) {
   return new Promise((resolve) => {
-    if (window.tronWeb && window.tronLink) return resolve(true);
+    if (typeof window !== 'undefined' && window.tronWeb) return resolve(true);
     const start = Date.now();
     const id = setInterval(() => {
-      if (window.tronWeb && window.tronLink) {
+      if (window.tronWeb) {
         clearInterval(id);
         resolve(true);
       } else if (Date.now() - start > timeout) {
@@ -26,17 +27,21 @@ function waitForTronWeb(timeout = 1500) {
   });
 }
 
-// Deep link that opens the current dApp inside TronLink's built-in browser,
-// where window.tronWeb IS injected. Requires TronLink v4.10.0+.
-function openInTronLink(dappUrl = window.location.href) {
-  const param = {
-    url: dappUrl,
-    action: 'open',
-    protocol: 'TronLink',
-    version: '1.0',
-  };
-  const encoded = encodeURIComponent(JSON.stringify(param));
-  window.location.href = `tronlinkoutside://pull.activity?param=${encoded}`;
+// Deep link that opens the current dApp inside TronLink's built-in browser.
+// Only used when NO provider is present on a plain mobile browser. Requires TronLink v4.10.0+.
+function openInTronLink(dappUrl) {
+  try {
+    const param = {
+      url: dappUrl || window.location.href,
+      action: 'open',
+      protocol: 'TronLink',
+      version: '1.0',
+    };
+    const encoded = encodeURIComponent(JSON.stringify(param));
+    window.location.href = `tronlinkoutside://pull.activity?param=${encoded}`;
+  } catch {
+    /* custom-scheme navigation can be blocked in some in-app browsers; ignore */
+  }
 }
 
 export function useTronLink() {
@@ -47,11 +52,13 @@ export function useTronLink() {
   const [error, setError] = useState(null);
 
   const fetchBalance = useCallback(async (tw, addr) => {
+    // Fully guarded: on very old WebViews TronWeb's BigInt math can throw — never let it crash the UI.
     if (!tw || !addr || !TOKEN.contractAddress) return;
     try {
       const contract = await tw.contract().at(TOKEN.contractAddress);
       const raw = await contract.balanceOf(addr).call();
-      setBalance((Number(raw) / 10 ** TOKEN.decimals).toLocaleString());
+      const value = Number(raw?.toString?.() ?? raw) / 10 ** TOKEN.decimals;
+      setBalance(Number.isFinite(value) ? value.toLocaleString() : '0');
     } catch {
       setBalance('0');
     }
@@ -61,41 +68,51 @@ export function useTronLink() {
     setError(null);
     setStatus('connecting');
     try {
-      const hasInjection = window.tronWeb && window.tronLink;
+      let hasProvider = typeof window !== 'undefined' && !!window.tronWeb;
 
-      if (!hasInjection) {
+      if (!hasProvider) {
         if (isMobile()) {
-          // Could be (a) TronLink's in-app browser still injecting, or
-          // (b) a plain mobile browser with no provider at all.
-          const ready = await waitForTronWeb(1500);
-          if (!ready) {
-            // Plain mobile browser → bounce the user into TronLink's dApp browser.
+          // Could be (a) a wallet in-app browser still injecting, or (b) a plain mobile browser.
+          hasProvider = await waitForProvider(2500);
+          if (!hasProvider) {
             openInTronLink();
-            // If TronLink isn't installed nothing happens; reset so the button
-            // doesn't stay stuck on "Connecting...".
             setTimeout(() => {
               setStatus((s) => (s === 'connecting' ? 'disconnected' : s));
             }, 2500);
-            // Optional: send users without TronLink to the download page instead:
-            // setTimeout(() => { window.location.href = 'https://www.tronlink.org/'; }, 2500);
             return;
           }
         } else {
-          // Desktop with no extension installed.
           throw new Error('TronLink not found. Please install the TronLink extension.');
         }
       }
 
-      await window.tronLink.request({ method: 'tron_requestAccounts' });
+      // Modern wallets expose tronLink.request for explicit authorization.
+      // Old in-app browsers don't — they auto-inject the unlocked address, so this is optional.
+      try {
+        if (window.tronLink?.request) {
+          await window.tronLink.request({ method: 'tron_requestAccounts' });
+        }
+      } catch {
+        // User may have rejected, or the method isn't supported on this build.
+        // Fall through and try to read the injected address before giving up.
+      }
+
       const tw = window.tronWeb;
-      const addr = tw.defaultAddress?.base58;
-      if (!addr) throw new Error('No account found in TronLink.');
+      let addr = tw?.defaultAddress?.base58;
+
+      // The wallet may still be unlocking; give it one short retry.
+      if (!addr) {
+        await new Promise((r) => setTimeout(r, 400));
+        addr = window.tronWeb?.defaultAddress?.base58;
+      }
+      if (!addr) throw new Error('Please open and unlock your wallet, then try again.');
+
       setTronWeb(tw);
       setAddress(addr);
       setStatus('connected');
       await fetchBalance(tw, addr);
     } catch (e) {
-      setError(e.message);
+      setError(e?.message || 'Could not connect. Please try again.');
       setStatus('error');
     }
   }, [fetchBalance]);
@@ -108,18 +125,23 @@ export function useTronLink() {
     setError(null);
   }, []);
 
-  // Listen for account changes
+  // Listen for account / network changes (guarded so a malformed message can't throw).
   useEffect(() => {
     const handler = (e) => {
-      if (e.data?.message?.action === 'setAccount') {
-        const newAddr = e.data.message.data?.address;
-        if (newAddr && tronWeb) {
-          setAddress(newAddr);
-          fetchBalance(tronWeb, newAddr);
+      try {
+        const action = e?.data?.message?.action;
+        if (action === 'setAccount') {
+          const newAddr = e.data.message.data?.address;
+          if (newAddr && tronWeb) {
+            setAddress(newAddr);
+            fetchBalance(tronWeb, newAddr);
+          }
         }
-      }
-      if (e.data?.message?.action === 'disconnect') {
-        disconnect();
+        if (action === 'disconnect') {
+          disconnect();
+        }
+      } catch {
+        /* ignore unexpected message shapes */
       }
     };
     window.addEventListener('message', handler);
