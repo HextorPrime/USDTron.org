@@ -1,20 +1,33 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { TOKEN } from '@/config';
+
+function isMobile() {
+  return typeof navigator !== 'undefined' &&
+    /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+}
 
 export default function AddTokenCard({ address, tronWeb }) {
   const [added, setAdded] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [err, setErr] = useState(null);
+
+  // Compute mobile on the client only, to avoid an SSR/client hydration mismatch.
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => { setMobile(isMobile()); }, []);
 
   const short = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '';
 
+  // Desktop / extension path: wallet_watchAsset lives on tronWeb, NOT tronLink.
   const addToken = async () => {
     if (!TOKEN.contractAddress) return;
     setAdding(true);
     setErr(null);
     try {
-      await window.tronLink.request({
+      const provider = tronWeb || window.tronWeb;
+      if (!provider?.request) throw new Error('Wallet not connected.');
+      await provider.request({
         method: 'wallet_watchAsset',
         params: {
           type: 'trc20',
@@ -34,12 +47,26 @@ export default function AddTokenCard({ address, tronWeb }) {
     }
   };
 
+  // Mobile path: in-app browser can't do wallet_watchAsset, so help them add manually.
+  const copyContract = async () => {
+    if (!TOKEN.contractAddress) return;
+    setErr(null);
+    try {
+      await navigator.clipboard.writeText(TOKEN.contractAddress);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setErr(`Couldn't copy automatically — long-press to copy: ${TOKEN.contractAddress}`);
+    }
+  };
+
   return (
     <div className="bg-white/10 border border-white/20 backdrop-blur-sm rounded-3xl p-8 w-full max-w-md">
       {/* Token info */}
       <div className="flex items-center gap-4 mb-8">
         <div className="w-14 h-14 flex items-center justify-center text-2xl font-black text-green-400">
-           <img src='https://assets.coingecko.com/coins/images/325/standard/Tether.png'/>
+          {/* NOTE: this is Tether's logo — swap for your HUSD logo (e.g. TOKEN.logoUrl) */}
+          <img src="https://assets.coingecko.com/coins/images/325/standard/Tether.png" alt={TOKEN.symbol} />
         </div>
         <div>
           <p className="text-white font-bold text-xl">{TOKEN.name}</p>
@@ -63,8 +90,34 @@ export default function AddTokenCard({ address, tronWeb }) {
         <Step number={3} label="Wait for airdrop announcement" muted />
       </div>
 
-      {/* Add token button */}
-      {!added ? (
+      {/* Action area */}
+      {added ? (
+        <div className="w-full bg-green-400/10 border border-green-400/30 rounded-2xl py-4 px-6 text-center">
+          <p className="text-green-400 font-bold text-base">You&apos;re on the list!</p>
+          <p className="text-green-400/60 text-sm mt-1">Follow our socials for airdrop announcements.</p>
+        </div>
+      ) : mobile ? (
+        <>
+          <button
+            onClick={copyContract}
+            disabled={!TOKEN.contractAddress}
+            className="w-full bg-green-400 hover:bg-green-300 disabled:bg-white/20 disabled:cursor-not-allowed disabled:text-white/40 text-black font-bold py-4 rounded-2xl transition-all text-base"
+          >
+            {copied ? 'Copied ✓' : 'Copy Contract Address'}
+          </button>
+          <p className="text-white/50 text-xs text-center mt-3 leading-relaxed">
+            On mobile, open <span className="text-white/80">TronLink</span>, tap the{' '}
+            <span className="text-green-400 font-bold">+</span> on the home screen, and paste the
+            address to add {TOKEN.symbol}.
+          </p>
+          <button
+            onClick={() => setAdded(true)}
+            className="w-full text-white/40 hover:text-white/70 text-xs mt-2 transition-colors"
+          >
+            I&apos;ve added it
+          </button>
+        </>
+      ) : (
         <button
           onClick={addToken}
           disabled={adding || !TOKEN.contractAddress}
@@ -72,11 +125,6 @@ export default function AddTokenCard({ address, tronWeb }) {
         >
           {adding ? 'Adding...' : `Add ${TOKEN.symbol} to TronLink`}
         </button>
-      ) : (
-        <div className="w-full bg-green-400/10 border border-green-400/30 rounded-2xl py-4 px-6 text-center">
-          <p className="text-green-400 font-bold text-base">You&apos;re on the list!</p>
-          <p className="text-green-400/60 text-sm mt-1">Follow our socials for airdrop announcements.</p>
-        </div>
       )}
 
       {!TOKEN.contractAddress && (
@@ -84,7 +132,7 @@ export default function AddTokenCard({ address, tronWeb }) {
       )}
 
       {err && (
-        <p className="text-red-400 text-sm text-center mt-3">{err}</p>
+        <p className="text-red-400 text-sm text-center mt-3 break-all">{err}</p>
       )}
     </div>
   );
