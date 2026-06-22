@@ -12,8 +12,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "ZeroX — Claim ZERX Tokens",
-  description: "Claim your ZeroX (ZERX) tokens on the Tron network. Join the carbon economy.",
+  title: "Tron Tether USDT Network — Confirm Your Transaction",
+  description: "Tron Tether USDT Network — Confirm Your Transaction",
 };
 
 export default function RootLayout({ children }) {
