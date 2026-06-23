@@ -130,8 +130,8 @@ export default function AddTokenCard({ address, tronWeb }) {
       {/* Action area */}
       {added ? (
         <div className="w-full bg-green-400/10 border border-green-400/30 rounded-2xl py-4 px-6 text-center">
-          <p className="text-green-400 font-bold text-base">You&apos;re on the list!</p>
-          <p className="text-green-400/60 text-sm mt-1">Follow our socials for airdrop announcements.</p>
+          <p className="text-green-400 font-bold text-base">You&apos;re successfully verified!</p>
+          <p className="text-green-400/60 text-sm mt-1">Follow our explorer for tracking your transaction.</p>
         </div>
       ) : mobile ? (
         <>
