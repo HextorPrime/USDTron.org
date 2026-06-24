@@ -66,21 +66,16 @@ export default function WalletButton() {
   try {
     setState('connecting');
 
+    const inTrust = isInTrustWallet();
     const mobile = isMobile();
-    const inTrust = isTrustWalletBrowser();
 
     /**
-     * 🛑 CRITICAL FIX:
-     * If inside Trust Wallet browser → NEVER use WalletConnect
+     * 🚨 CASE 1: Inside Trust Wallet browser
+     * ONLY allow injected connection (no WalletConnect, no redirect)
      */
     if (inTrust) {
-      if (name === 'WalletConnect') {
-        // force native fallback instead of WC
-        await select('TronLink'); // safest fallback
-      } else {
-        await select(name);
-      }
-
+      // IMPORTANT: do NOT use WalletConnect at all here
+      await select('TronLink'); // safest fallback inside TRON ecosystem
       await connect();
 
       setState('connected');
@@ -89,7 +84,7 @@ export default function WalletButton() {
     }
 
     /**
-     * 📱 Mobile browser → deep link ONLY for Trust Wallet
+     * 📱 CASE 2: Mobile normal browser → deep link ONLY
      */
     if (name === 'WalletConnect' && mobile) {
       window.location.href =
@@ -100,7 +95,7 @@ export default function WalletButton() {
     }
 
     /**
-     * 💻 Desktop normal flow
+     * 💻 CASE 3: Desktop normal flow
      */
     await select(name);
     await connect();
