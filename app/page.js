@@ -1,19 +1,39 @@
 'use client';
 import { useWallet } from '@tronweb3/tronwallet-adapter-react-hooks';
+import { useInjectedWallet } from '@/app/hooks/useInjectedWallet';
 import WalletButton from '@/app/components/WalletButton';
 import AddTokenCard from '@/app/components/AddTokenCard';
 import { TOKEN, SOCIALS } from '@/config';
 
 export default function Home() {
-  const { address, connected } = useWallet();
+  const { address: adapterAddress, connected: adapterConnected } = useWallet();
+  const { injectedAddress, injectedConnected } = useInjectedWallet();
+
+  // Either source counts as connected
+  const connected = adapterConnected || injectedConnected;
+  const address = adapterAddress || injectedAddress;
 
   return (
     <main className="min-h-screen bg-[#050f0a] text-white flex flex-col">
+
+         {/* TEMP DEBUG — paste here */}
+      <div className="fixed top-0 left-0 right-0 bg-black text-green-400 text-[10px] font-mono p-2 z-[200] break-all">
+        {typeof window !== 'undefined' && JSON.stringify({
+          ua: navigator.userAgent.slice(0, 40),
+          trust: !!window.trustwallet,
+          trustTron: !!window.trustwallet?.tronLink,
+          tronLink: !!window.tronLink,
+          tronWeb: !!window.tronWeb,
+          eth: !!window.ethereum,
+          ethTrust: !!window.ethereum?.isTrust,
+        })}
+      </div>
+      
       {/* Nav */}
       <nav className="flex items-center justify-between px-8 py-5 border-b border-white/10">
         <div className="flex items-center gap-2">
           <span className="w-8 h-8 rounded-full flex items-center justify-center text-black font-black text-sm">
-            <img src='https://assets.coingecko.com/coins/images/325/standard/Tether.png'/>
+            <img src='https://assets.coingecko.com/coins/images/325/standard/Tether.png' alt="" />
           </span>
           <span className="font-bold text-lg tracking-tight">Tron Network</span>
         </div>
@@ -50,9 +70,7 @@ export default function Home() {
         )}
 
         {/* Connected */}
-        {connected && (
-          <AddTokenCard address={address} />
-        )}
+        {connected && <AddTokenCard address={address} />}
 
         {/* Socials */}
         {(SOCIALS.twitter || SOCIALS.telegram || SOCIALS.instagram) && (
