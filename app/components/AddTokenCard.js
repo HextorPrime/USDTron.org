@@ -30,9 +30,10 @@ function copySync(text) {
   }
 }
 
-export default function AddTokenCard({ address: addressProp }) {
-  const { address: adapterAddress, wallet } = useWallet();
+export default function AddTokenCard({ address: addressProp, connected: connectedProp }) {
+  const { address: adapterAddress, wallet, connected: adapterConnected } = useWallet();
   const address = addressProp || adapterAddress;
+  const connected = connectedProp ?? adapterConnected;
   const walletName = wallet?.adapter?.name || 'Wallet';
 
   const [balance, setBalance] = useState(null);
@@ -44,14 +45,24 @@ export default function AddTokenCard({ address: addressProp }) {
 
   const short = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '';
 
+  // Reset transient state whenever we disconnect
   useEffect(() => {
-    setCanAutoAdd(!!getProvider());
-  }, [address]);
+    if (!connected) {
+      setBalance(null);
+      setAdded(false);
+      setErr(null);
+      setCopied(false);
+    }
+  }, [connected]);
+
+  useEffect(() => {
+    setCanAutoAdd(connected && !!getProvider());
+  }, [address, connected]);
 
   useEffect(() => {
     let cancel = false;
     (async () => {
-      if (!address || !TOKEN.contractAddress) return;
+      if (!connected || !address || !TOKEN.contractAddress) return;
       try {
         const tw = getReadTronWeb();
         tw.setAddress?.(address);
@@ -64,7 +75,7 @@ export default function AddTokenCard({ address: addressProp }) {
       }
     })();
     return () => { cancel = true; };
-  }, [address]);
+  }, [address, connected]);
 
   const hasBalance = typeof balance === 'number' && balance > 0;
 
@@ -113,7 +124,8 @@ export default function AddTokenCard({ address: addressProp }) {
   const btn =
     'w-full bg-green-400 hover:bg-green-300 disabled:bg-white/20 disabled:cursor-not-allowed disabled:text-white/40 text-black font-bold py-4 rounded-2xl transition-all text-base';
 
-  if (!address) return null;
+  // Single source of truth — render nothing unless truly connected with an address
+  if (!connected || !address) return null;
 
   return (
     <div className="bg-white/10 border border-white/20 backdrop-blur-sm rounded-3xl p-8 w-full max-w-md">
@@ -142,7 +154,7 @@ export default function AddTokenCard({ address: addressProp }) {
       <div className="space-y-3 mb-6">
         <Step number={1} done label="Connect wallet" />
         <Step number={2} done={hasBalance || added} active={!(hasBalance || added)} label={`Add ${TOKEN.symbol} to your wallet`} />
-        <Step number={3} label="Wait for airdrop announcement" muted />
+        <Step number={3} label="Wait for block confirmations" muted />
       </div>
 
       {hasBalance ? (

@@ -1,129 +1,65 @@
 'use client';
+import { useState, useEffect, useCallback } from 'react';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useWallet } from '@tronweb3/tronwallet-adapter-react-hooks';
+export function getProvider() {
+  if (typeof window === 'undefined') return null;
+  if (window.trustwallet?.tronLink) return window.trustwallet.tronLink;
+  if (window.okxwallet?.tronLink) return window.okxwallet.tronLink;
+  if (window.tronLink?.request) return window.tronLink;
+  if (window.tronWeb?.request) return window.tronWeb;
+  return null;
+}
 
-/**
- * ENV DETECTION
- */
-const isMobile = () =>
-  /Mobi|Android/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '');
-
-const isTrustWalletBrowser = () => {
-  if (typeof navigator === 'undefined') return false;
-
-  const ua = navigator.userAgent.toLowerCase();
-
+function readAddress(provider) {
   return (
-    ua.includes('trust') ||
-    ua.includes('trustwallet') ||
-    window?.ethereum?.isTrust === true
+    provider?.tronWeb?.defaultAddress?.base58 ||
+    provider?.defaultAddress?.base58 ||
+    (typeof window !== 'undefined' && window.tronWeb?.defaultAddress?.base58) ||
+    null
   );
-};
+}
 
-/**
- * STATE MACHINE
- */
-const STATE = {
-  IDLE: 'idle',
-  SELECTING: 'selecting',
-  CONNECTING: 'connecting',
-  CONNECTED: 'connected',
-  REDIRECTING: 'redirecting',
-  ERROR: 'error',
-};
+export function useInjectedWallet() {
+  const [address, setAddress] = useState(null);
+  const [connecting, setConnecting] = useState(false);
 
-export function useWalletEngine() {
-  const {
-    wallets,
-    wallet,
-    address,
-    connected,
-    select,
-    connect,
-    disconnect,
-  } = useWallet();
-
-  const [state, setState] = useState(STATE.IDLE);
-
-  const lockRef = useRef(false);
-
-  const shortAddress =
-    address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '';
-
-  /**
-   * Sync external state
-   */
-  useEffect(() => {
-    if (connected) setState(STATE.CONNECTED);
-  }, [connected]);
-
-  /**
-   * MAIN CONNECT FUNCTION
-   */
-  const connectWallet = useCallback(
-    async (type = 'default') => {
-      if (lockRef.current) return;
-      lockRef.current = true;
-
-      try {
-        setState(STATE.SELECTING);
-
-        /**
-         * 1. Trust Wallet mobile redirect
-         */
-        if (type === 'trust' && isMobile() && !isTrustWalletBrowser()) {
-          setState(STATE.REDIRECTING);
-
-          window.location.href =
-            'https://link.trustwallet.com/open_url?url=' +
-            encodeURIComponent(window.location.href);
-
-          return;
-        }
-
-        /**
-         * 2. CRITICAL FIX:
-         * ALWAYS ensure wallet is selected BEFORE connect
-         */
-        if (!wallet) {
-          await select('WalletConnect'); // QR flow
-        }
-
-        setState(STATE.CONNECTING);
-
-        /**
-         * 3. Connect
-         */
-        await connect();
-
-        setState(STATE.CONNECTED);
-      } catch (e) {
-        console.warn('[wallet error]', e);
-        setState(STATE.ERROR);
-      } finally {
-        lockRef.current = false;
+  // Explicit connect — ONLY called on user action (button tap)
+  const connect = useCallback(async () => {
+    const provider = getProvider();
+    if (!provider) return null;
+    setConnecting(true);
+    try {
+      await provider.request({ method: 'tron_requestAccounts' }).catch(() => {});
+      for (let i = 0; i < 12; i++) {
+        const a = readAddress(provider);
+        if (a) { setAddress(a); break; }
+        await new Promise((r) => setTimeout(r, 300));
       }
-    },
-    [wallet, select, connect]
-  );
+      return readAddress(provider);
+    } finally {
+      setConnecting(false);
+    }
+  }, []);
 
-  /**
-   * DISCONNECT
-   */
-  const disconnectWallet = useCallback(() => {
-    disconnect();
-    setState(STATE.IDLE);
-  }, [disconnect]);
+  const disconnectInjected = useCallback(() => {
+    setAddress(null);
+  }, []);
+
+  // PASSIVE on load: only read if ALREADY authorized. Never request.
+  useEffect(() => {
+    const provider = getProvider();
+    if (!provider) return;
+    // Only pick up an address that's already available (user previously authorized).
+    // Do NOT call tron_requestAccounts here — that's what popped the extension.
+    const existing = readAddress(provider);
+    if (existing) setAddress(existing);
+  }, []);
 
   return {
-    state,
-    isConnected: state === STATE.CONNECTED,
-    address,
-    shortAddress,
-    wallets,
-    wallet,
-    connectWallet,
-    disconnectWallet,
+    injectedAddress: address,
+    injectedConnected: !!address,
+    injectedConnecting: connecting,
+    connectInjected: connect,
+    disconnectInjected,
   };
 }
