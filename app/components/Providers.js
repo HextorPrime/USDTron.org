@@ -17,41 +17,29 @@ export default function Providers({ children }) {
     const projectId = process.env.NEXT_PUBLIC_WC_PROJECT_ID;
     const list = [];
 
-    // ✅ 1. WalletConnect FIRST (Trust Wallet, MetaMask mobile, etc.)
+    // WalletConnect (Trust Wallet, MetaMask mobile, etc.)
     if (projectId) {
-      try {
-        list.push(
-          new WalletConnectAdapter({
-            network: 'Mainnet',
-            options: {
-              relayUrl: 'wss://relay.walletconnect.com',
-              projectId,
-              metadata: {
-                name: 'Tether USDT',
-                description: 'USDT Wallet verification',
-                url: window.location.origin,
-                icons: ['https://usdtron.org/logo.png'],
-              },
+      list.push(
+        new WalletConnectAdapter({
+          network: 'Mainnet',
+          options: {
+            projectId,
+            relayUrl: 'wss://relay.walletconnect.com',
+            metadata: {
+              name: 'My dApp',
+              url: window.location.origin,
+              icons: ['https://usdtron.org/logo.png'],
             },
-            web3ModalConfig: {
-  themeMode: 'dark',
-  explorerRecommendedWalletIds: [
-    '4622f5c9d4c5f4f8f8f8f8f8f8f8f8f8'
-  ],
-},
-          })
-        );
-      } catch (e) {
-        console.error('[wallet] WC init failed:', e);
-      }
+          },
+        })
+      );
     }
 
-    // ✅ 2. Native TRON wallets AFTER
-
-        list.push(
-    new TronLinkAdapter(),
-    new OkxWalletAdapter(),
-    new TokenPocketAdapter()
+    // Native wallets
+    list.push(
+      new TronLinkAdapter(),
+      new OkxWalletAdapter(),
+      new TokenPocketAdapter()
     );
 
     return list;
@@ -63,8 +51,14 @@ export default function Providers({ children }) {
       autoConnect={false}
       disableAutoConnectOnLoad={true}
       onError={(e) => {
-        if (e?.message === 'The QR window is closed.') return;
-        console.error('[wallet]', e?.message || e);
+        const msg = e?.message || '';
+
+        if (
+          msg.includes('QR window is closed') ||
+          msg.includes('No wallet is selected')
+        ) return;
+
+        console.error('[wallet]', msg);
       }}
     >
       {children}
