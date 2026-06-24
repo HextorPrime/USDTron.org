@@ -26,14 +26,8 @@ const isMobile = () =>
  */
 const isTrustWalletBrowser = () => {
   if (typeof navigator === 'undefined') return false;
-
   const ua = navigator.userAgent.toLowerCase();
-
-  return (
-    ua.includes('trust') ||
-    ua.includes('trustwallet') ||
-    window?.ethereum?.isTrust === true
-  );
+  return ua.includes('trust') || window?.ethereum?.isTrust;
 };
 
 export default function WalletButton() {
@@ -64,61 +58,30 @@ export default function WalletButton() {
    * 🚀 MAIN CONNECT FUNCTION
    */
   const pick = async (name) => {
-    if (lockRef.current) return;
-    lockRef.current = true;
+  if (lockRef.current) return;
+  lockRef.current = true;
 
-    try {
-      setState('connecting');
+  try {
+    const inTrust = isTrustWalletBrowser();
 
-      const mobile = isMobile();
-      const inTrust = isTrustWalletBrowser();
-
-      /**
-       * 🟣 CASE 1: TRUST WALLET IN-APP BROWSER
-       * → NO deep link allowed
-       * → NO WalletConnect
-       * → just normal connect attempt
-       */
-      if (inTrust) {
-        await select(name);
-        await connect();
-
-        setState('connected');
-        setOpen(false);
-        return;
-      }
-
-      /**
-       * 📱 CASE 2: Mobile external browser → Trust Wallet deep link
-       * ONLY ONCE (IMPORTANT FIX)
-       */
-      if (name === 'WalletConnect' && mobile) {
-        if (trustRedirectedRef.current) return;
-
-        trustRedirectedRef.current = true;
-
-        window.location.href =
-          'https://link.trustwallet.com/open_url?url=' +
-          encodeURIComponent(window.location.href);
-
-        return;
-      }
-
-      /**
-       * 💻 CASE 3: Desktop or normal wallet flow
-       */
-      await select(name);
-      await connect();
-
-      setState('connected');
-      setOpen(false);
-    } catch (e) {
-      console.warn('[wallet error]', e);
-      setState('error');
-    } finally {
-      lockRef.current = false;
+    /**
+     * 🟣 Inside Trust Wallet → NO WalletConnect EVER
+     */
+    if (inTrust && name === 'WalletConnect') {
+      console.warn('WalletConnect disabled inside Trust Wallet');
+      return;
     }
-  };
+
+    await select(name);
+    await connect();
+
+    setOpen(false);
+  } catch (e) {
+    console.warn('[wallet error]', e);
+  } finally {
+    lockRef.current = false;
+  }
+};
 
   /**
    * CONNECTED UI
