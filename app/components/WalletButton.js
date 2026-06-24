@@ -12,16 +12,25 @@ const LABELS = {
 };
 
 const ICONS = {
-  WalletConnect: 'https://avatars.githubusercontent.com/u/32179889?s=200&v=4',
+  WalletConnect:
+    'https://avatars.githubusercontent.com/u/32179889?s=200&v=4',
 };
 
 const isMobile = () =>
-  /Mobi|Android/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '');
+  /Mobi|Android/i.test(
+    typeof navigator !== 'undefined' ? navigator.userAgent : ''
+  );
 
 const isTrustWalletBrowser = () => {
   if (typeof navigator === 'undefined') return false;
+
   const ua = navigator.userAgent.toLowerCase();
-  return ua.includes('trust') || window?.ethereum?.isTrust;
+
+  return (
+    ua.includes('trust') ||
+    ua.includes('trustwallet') ||
+    window?.ethereum?.isTrust === true
+  );
 };
 
 export default function WalletButton() {
@@ -47,6 +56,9 @@ export default function WalletButton() {
     if (connected) setState('connected');
   }, [connected]);
 
+  /**
+   * CORE CONNECT LOGIC (FIXED)
+   */
   const pick = async (name) => {
     if (lockRef.current) return;
     lockRef.current = true;
@@ -54,14 +66,28 @@ export default function WalletButton() {
     try {
       setState('connecting');
 
-      // Trust Wallet mobile redirect (ONLY ONCE)
-      if (
-        name === 'WalletConnect' &&
-        isMobile() &&
-        !isTrustWalletBrowser()
-      ) {
-        setState('redirecting');
+      const mobile = isMobile();
+      const inTrustWallet = isTrustWalletBrowser();
 
+      /**
+       * 🟣 CASE 1: Inside Trust Wallet in-app browser
+       * → NEVER use WalletConnect
+       * → use injected provider flow
+       */
+      if (inTrustWallet) {
+        await select(name);
+        await connect();
+
+        setState('connected');
+        setOpen(false);
+        return;
+      }
+
+      /**
+       * 📱 CASE 2: Mobile normal browser → deep link
+       * ONLY for WalletConnect (Trust Wallet app flow)
+       */
+      if (name === 'WalletConnect' && mobile) {
         window.location.href =
           'https://link.trustwallet.com/open_url?url=' +
           encodeURIComponent(window.location.href);
@@ -69,27 +95,34 @@ export default function WalletButton() {
         return;
       }
 
-      // CRITICAL FIX: ALWAYS select FIRST
+      /**
+       * 💻 CASE 3: Desktop / normal wallets
+       * → WalletConnect QR or native wallets
+       */
       await select(name);
-
       await connect();
 
       setState('connected');
       setOpen(false);
     } catch (e) {
-      console.warn('[wallet]', e);
+      console.warn('[wallet error]', e);
       setState('error');
     } finally {
       lockRef.current = false;
     }
   };
 
+  /**
+   * CONNECTED UI
+   */
   if (connected) {
     return (
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 bg-white/10 border border-white/20 rounded-full px-4 py-2">
           <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-          <span className="text-sm text-white font-mono">{short}</span>
+          <span className="text-sm text-white font-mono">
+            {short}
+          </span>
         </div>
 
         <button
@@ -102,6 +135,9 @@ export default function WalletButton() {
     );
   }
 
+  /**
+   * UI
+   */
   return (
     <>
       <button
