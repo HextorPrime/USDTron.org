@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from 'react';
 import { useWallet } from '@tronweb3/tronwallet-adapter-react-hooks';
 
 const LABELS = {
-  WalletConnect: 'Trust Wallet',
   TronLink: 'TronLink',
   OkxWallet: 'OKX Wallet',
   BitKeep: 'Bitget Wallet',
@@ -21,6 +20,9 @@ const isMobile = () =>
     typeof navigator !== 'undefined' ? navigator.userAgent : ''
   );
 
+/**
+ * Detect Trust Wallet in-app browser
+ */
 const isTrustWalletBrowser = () => {
   if (typeof navigator === 'undefined') return false;
 
@@ -29,7 +31,7 @@ const isTrustWalletBrowser = () => {
   return (
     ua.includes('trust') ||
     ua.includes('trustwallet') ||
-    (typeof window !== 'undefined' && window.ethereum?.isTrust)
+    window?.ethereum?.isTrust === true
   );
 };
 
@@ -54,12 +56,32 @@ export default function WalletButton() {
     ? `${address.slice(0, 6)}...${address.slice(-4)}`
     : null;
 
+  /**
+   * Detect environment
+   */
   useEffect(() => {
     setMobile(isMobile());
   }, []);
 
   /**
-   * CONNECT ONLY (no redirects here)
+   * 🚨 TRUST WALLET AUTO MODE (IMPORTANT FIX)
+   * Inside Trust Wallet app → no UI, no selection, just connect
+   */
+  useEffect(() => {
+    if (!isTrustWalletBrowser()) return;
+
+    setFlow('connecting');
+
+    select('WalletConnect')
+      .then(() => connect())
+      .catch((e) => {
+        console.warn('Auto connect error:', e);
+        setFlow('error');
+      });
+  }, []);
+
+  /**
+   * NORMAL CONNECT FLOW
    */
   useEffect(() => {
     if (flow !== 'connecting') return;
@@ -79,12 +101,17 @@ export default function WalletButton() {
       });
   }, [flow, wallet, connect]);
 
+  /**
+   * Sync external wallet state
+   */
   useEffect(() => {
-    if (connected) setFlow('connected');
+    if (connected) {
+      setFlow('connected');
+    }
   }, [connected]);
 
   /**
-   * OPEN TRUST WALLET (ONLY OUTSIDE TRUST APP)
+   * Open Trust Wallet deep link (mobile external browser only)
    */
   const openTrustWallet = () => {
     const url = window.location.href;
@@ -97,26 +124,17 @@ export default function WalletButton() {
   };
 
   /**
-   * MAIN WALLET HANDLER
+   * Wallet selection
    */
   const selectWallet = async (name) => {
     setFlow('selecting');
 
-    const inTrustApp = isTrustWalletBrowser();
-
-    /**
-     * 🚨 CRITICAL RULE:
-     * If inside Trust Wallet app → NEVER redirect again
-     */
-    if (inTrustApp && name === 'TrustWallet') {
+    // 🚨 If inside Trust Wallet app → ignore selection UI
+    if (isTrustWalletBrowser()) {
       setFlow('connecting');
-      await select('WalletConnect');
       return;
     }
 
-    /**
-     * TRUST WALLET FLOW
-     */
     if (name === 'TrustWallet') {
       if (mobile) {
         setFlow('redirecting');
@@ -124,15 +142,12 @@ export default function WalletButton() {
         return;
       }
 
-      // desktop fallback = QR
+      // Desktop → QR (WalletConnect)
       await select('WalletConnect');
       setFlow('connecting');
       return;
     }
 
-    /**
-     * ALL OTHER WALLETS
-     */
     await select(name);
     setFlow('connecting');
   };
@@ -157,6 +172,17 @@ export default function WalletButton() {
         >
           Disconnect
         </button>
+      </div>
+    );
+  }
+
+  /**
+   * TRUST WALLET MODE → NO UI (IMPORTANT FIX)
+   */
+  if (isTrustWalletBrowser()) {
+    return (
+      <div className="text-white text-sm opacity-70">
+        Connecting via Trust Wallet...
       </div>
     );
   }
@@ -193,13 +219,13 @@ export default function WalletButton() {
               </button>
             </div>
 
-            {mobile && !isTrustWalletBrowser() && (
+            {mobile && (
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-3 mb-4">
                 <p className="text-blue-300 text-xs font-semibold">
                   📱 Mobile detected
                 </p>
                 <p className="text-blue-300/70 text-xs mt-1">
-                  Trust Wallet will open directly
+                  Will open Trust Wallet if selected
                 </p>
               </div>
             )}
@@ -222,7 +248,7 @@ export default function WalletButton() {
                   </span>
 
                   <span className="text-green-400/60 text-xs">
-                    {isMobile() ? 'Open App' : 'WalletConnect QR'}
+                    {mobile ? 'Open App' : 'WalletConnect QR'}
                   </span>
                 </div>
               </button>
