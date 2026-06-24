@@ -3,7 +3,7 @@
 // Usage in parent:  <WalletButton />   (must be inside <Providers>)
 import { useState, useEffect, useRef } from 'react';
 import { useWallet } from '@tronweb3/tronwallet-adapter-react-hooks';
-import { WALLET_LABELS } from '@/lib/wallet';
+import { WALLET_LABELS } from './Wallet';
 
 export default function WalletButton() {
   const { wallets, wallet, address, connected, connecting, select, connect, disconnect } = useWallet();

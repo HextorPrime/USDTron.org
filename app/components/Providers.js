@@ -1,32 +1,48 @@
 'use client';
-// app/Providers.js — wrap your app so useWallet() works everywhere.
-// In app/layout.js:  <body><Providers>{children}</Providers></body>
+// app/Providers.js — self-contained. No external adapter import to break.
 import { useMemo } from 'react';
 import { WalletProvider } from '@tronweb3/tronwallet-adapter-react-hooks';
-import {
-  WalletNotFoundError,
-  WalletDisconnectedError,
-} from '@tronweb3/tronwallet-abstract-adapter';
-import { getAdapters } from '@/lib/wallet';
+import { TronLinkAdapter, WalletConnectAdapter } from '@tronweb3/tronwallet-adapters';
 
 export default function Providers({ children }) {
-  const adapters = useMemo(() => getAdapters(), []);
+  const adapters = useMemo(() => {
+    // TronLink always works (no config needed).
+    const list = [new TronLinkAdapter()];
 
-  function onError(e) {
-    // Wire this into your toast system if you have one.
-    if (e instanceof WalletNotFoundError) {
-      console.error('Wallet not found:', e.message);
-    } else if (e instanceof WalletDisconnectedError) {
-      console.error('Wallet disconnected:', e.message);
-    } else {
-      console.error('[wallet]', e?.message || e);
+    // Only add WalletConnect (Trust Wallet) if a projectId is present — otherwise
+    // its constructor can throw and take the whole provider down with it.
+    const projectId = process.env.NEXT_PUBLIC_WC_PROJECT_ID;
+    if (projectId) {
+      try {
+        list.push(
+          new WalletConnectAdapter({
+            network: 'Mainnet', // 'Nile' while testing
+            options: {
+              relayUrl: 'wss://relay.walletconnect.com',
+              projectId,
+              metadata: {
+                name: 'HushUSD',
+                description: 'HUSD airdrop',
+                url: typeof window !== 'undefined' ? window.location.origin : 'https://yourdapp.com',
+                icons: ['https://yourdapp.com/logo.png'],
+              },
+            },
+            web3ModalConfig: { themeMode: 'dark' },
+          })
+        );
+      } catch (e) {
+        console.error('[wallet] WalletConnect init failed:', e?.message || e);
+      }
     }
-  }
+    return list;
+  }, []);
 
-  // autoConnect: connects right after a wallet is selected, and reconnects the
-  // last wallet on page load. This is why WalletButton only needs select().
   return (
-    <WalletProvider adapters={adapters} onError={onError} autoConnect>
+    <WalletProvider
+      adapters={adapters}
+      autoConnect
+      onError={(e) => console.error('[wallet]', e?.message || e)}
+    >
       {children}
     </WalletProvider>
   );

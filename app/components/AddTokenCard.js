@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useWallet } from '@tronweb3/tronwallet-adapter-react-hooks';
 import { TOKEN } from '@/config';
-import { readTronWeb } from '@/lib/wallet';
+import { readTronWeb } from './Wallet';
 
 // Synchronous clipboard copy (works on iOS gesture window + old Android WebViews).
 function copySync(text) {
