@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useWallet } from '@tronweb3/tronwallet-adapter-react-hooks';
 
 const LABELS = {
-  WalletConnect: 'Trust / MetaMask / OKX & more',
+  WalletConnect: 'Trust, MetaMask, OKX & more',
   TronLink: 'TronLink',
   OkxWallet: 'OKX Wallet',
   BitKeep: 'Bitget Wallet',
@@ -11,22 +11,21 @@ const LABELS = {
 };
 
 const ORDER = ['WalletConnect', 'TronLink', 'OkxWallet', 'BitKeep', 'TokenPocket'];
-
-// Extension-only adapters that have no meaning on mobile browsers
 const EXTENSION_ONLY = ['TronLink', 'OkxWallet', 'BitKeep', 'TokenPocket'];
 
-const isMobile = () =>
-  /Mobi|Android|iPhone|iPad/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '');
+// Evaluate immediately (not in useEffect) so first render is correct
+const detectMobile = () =>
+  typeof navigator !== 'undefined' &&
+  /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 export default function WalletButton() {
   const { wallets, wallet, address, connected, connecting, select, connect, disconnect } = useWallet();
   const [open, setOpen] = useState(false);
   const [shouldConnect, setShouldConnect] = useState(false);
-  const [mobile, setMobile] = useState(false);
+  // Initialize synchronously from a function so it's right on first paint
+  const [mobile] = useState(detectMobile);
 
   const short = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : null;
-
-  useEffect(() => { setMobile(isMobile()); }, []);
 
   useEffect(() => {
     if (wallet && shouldConnect) {
@@ -43,7 +42,7 @@ export default function WalletButton() {
 
   const sortedWallets = [...wallets]
     .filter((w) => {
-      // On mobile, only show WalletConnect (extensions don't exist on mobile browsers)
+      // On mobile browsers, extensions don't exist — only WalletConnect works
       if (mobile && EXTENSION_ONLY.includes(w.adapter.name)) return false;
       return true;
     })
@@ -98,7 +97,7 @@ export default function WalletButton() {
             {mobile && (
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-3 mb-4">
                 <p className="text-blue-300/80 text-xs leading-relaxed">
-                  Tap below, then choose your wallet (Trust, MetaMask, OKX...) in the next screen.
+                  Tap below, then pick your wallet (Trust, MetaMask, OKX...) on the next screen.
                 </p>
               </div>
             )}
