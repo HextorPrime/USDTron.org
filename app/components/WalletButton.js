@@ -15,20 +15,21 @@ const ICONS = {
   TrustWallet: 'https://avatars.githubusercontent.com/u/32179889?s=200&v=4',
 };
 
-// Native adapters shown between Trust (top) and WalletConnect (bottom)
 const ORDER = ['TronLink', 'OkxWallet', 'BitKeep', 'TokenPocket', 'WalletConnect'];
 
 const isMobile = () =>
-  /Mobi|Android|iPhone|iPad/i.test(
-    typeof navigator !== 'undefined' ? navigator.userAgent : ''
-  );
+  /Mobi|Android|iPhone|iPad/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '');
 
-// True when already inside a wallet's in-app browser (provider injected)
-const inWalletBrowser = () =>
-  typeof window !== 'undefined' &&
-  (!!window.tronWeb || !!window.trustwallet?.tronLink || !!window.okxwallet?.tronLink);
+// Detect injected TRON provider = we're inside a wallet's in-app browser
+const getInjected = () => {
+  if (typeof window === 'undefined') return null;
+  if (window.trustwallet?.tronLink) return window.trustwallet.tronLink;
+  if (window.okxwallet?.tronLink) return window.okxwallet.tronLink;
+  if (window.tronLink?.request) return window.tronLink;
+  if (window.tronWeb?.request) return window.tronWeb;
+  return null;
+};
 
-// Deep links that re-open THIS page inside each wallet's dApp browser
 const deepLinks = (url) => ({
   TrustWallet: `https://link.trustwallet.com/open_url?url=${encodeURIComponent(url)}`,
   OkxWallet: `okx://wallet/dapp/url?dappUrl=${encodeURIComponent(url)}`,
@@ -42,12 +43,35 @@ export default function WalletButton() {
   const [shouldConnect, setShouldConnect] = useState(false);
   const [mobile, setMobile] = useState(false);
   const [inApp, setInApp] = useState(false);
+  const [injectedAddr, setInjectedAddr] = useState(null);
 
-  const short = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : null;
+  const realAddress = address || injectedAddr;
+  const short = realAddress ? `${realAddress.slice(0, 6)}...${realAddress.slice(-4)}` : null;
+  const isConnected = connected || !!injectedAddr;
 
   useEffect(() => {
     setMobile(isMobile());
-    setInApp(inWalletBrowser());
+    const injected = getInjected();
+    setInApp(!!injected);
+
+    // If we're inside a wallet browser, auto-connect immediately — no picker
+    if (injected) {
+      (async () => {
+        try {
+          await injected.request({ method: 'tron_requestAccounts' }).catch(() => {});
+          for (let i = 0; i < 12; i++) {
+            const a =
+              injected?.tronWeb?.defaultAddress?.base58 ||
+              injected?.defaultAddress?.base58 ||
+              window.tronWeb?.defaultAddress?.base58;
+            if (a) { setInjectedAddr(a); break; }
+            await new Promise((r) => setTimeout(r, 300));
+          }
+        } catch (e) {
+          console.warn('auto-connect failed', e);
+        }
+      })();
+    }
   }, []);
 
   useEffect(() => {
@@ -57,28 +81,31 @@ export default function WalletButton() {
     }
   }, [wallet, shouldConnect, connect]);
 
-  // Sorted native adapters (everything except we handle Trust separately at top)
   const sortedWallets = [...wallets].sort(
     (a, b) => ORDER.indexOf(a.adapter.name) - ORDER.indexOf(b.adapter.name)
   );
 
-  // Connect Trust Wallet — uses WalletConnect (desktop QR / mobile deep link)
+  // Trust button
   const connectTrust = async () => {
     setOpen(false);
 
-    // Mobile browser (not in-app) → deep-link into Trust app
-    if (mobile && !inApp) {
-      window.location.href = deepLinks(window.location.href).TrustWallet;
+    // ALREADY inside a wallet browser → never deep-link, just connect injected
+    if (inApp) {
+      const injected = getInjected();
+      if (injected) {
+        await injected.request({ method: 'tron_requestAccounts' }).catch(() => {});
+        const a =
+          injected?.tronWeb?.defaultAddress?.base58 ||
+          injected?.defaultAddress?.base58 ||
+          window.tronWeb?.defaultAddress?.base58;
+        if (a) setInjectedAddr(a);
+      }
       return;
     }
 
-    // Inside Trust's own browser → native injected provider
-    if (window.trustwallet?.tronLink) {
-      try {
-        await window.trustwallet.tronLink.request({ method: 'tron_requestAccounts' });
-      } catch (e) {
-        console.warn('Trust connect error:', e);
-      }
+    // Mobile browser (NOT in-app) → deep-link into Trust once
+    if (mobile) {
+      window.location.href = deepLinks(window.location.href).TrustWallet;
       return;
     }
 
@@ -90,26 +117,33 @@ export default function WalletButton() {
   const pick = async (name) => {
     setOpen(false);
 
-    // Mobile browser (not in-app) → deep-link into the chosen wallet app
-    if (mobile && !inApp && name !== 'WalletConnect') {
-      const links = deepLinks(window.location.href);
+    // Inside a wallet browser → always injected connect, never deep-link
+    if (inApp) {
+      await select(name);
+      setShouldConnect(true);
+      return;
+    }
+
+    // Mobile browser (not in-app) → deep-link for native wallets
+    if (mobile && name !== 'WalletConnect') {
       const key =
         name === 'OkxWallet' ? 'OkxWallet' :
         name === 'TokenPocket' ? 'TokenPocket' :
         name === 'BitKeep' ? 'BitKeep' :
         'TrustWallet';
-      if (links[key]) {
-        window.location.href = links[key];
+      const link = deepLinks(window.location.href)[key];
+      if (link) {
+        window.location.href = link;
         return;
       }
     }
 
-    // Desktop or in-app → normal injected connect
+    // Desktop / WalletConnect → injected connect
     await select(name);
     setShouldConnect(true);
   };
 
-  if (connected) {
+  if (isConnected) {
     return (
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 bg-white/10 border border-white/20 rounded-full px-4 py-2">
@@ -117,12 +151,25 @@ export default function WalletButton() {
           <span className="text-sm text-white font-mono">{short}</span>
         </div>
         <button
-          onClick={disconnect}
+          onClick={() => { disconnect(); setInjectedAddr(null); }}
           className="text-xs text-white/50 hover:text-white/80 transition-colors"
         >
           Disconnect
         </button>
       </div>
+    );
+  }
+
+  // Inside a wallet browser but not yet connected → show a single direct connect button
+  if (inApp) {
+    return (
+      <button
+        onClick={connectTrust}
+        disabled={connecting}
+        className="bg-white text-black font-semibold text-sm px-5 py-2 rounded-full hover:bg-white/90 transition-all disabled:opacity-60"
+      >
+        {connecting ? 'Connecting...' : 'Connect Wallet'}
+      </button>
     );
   }
 
@@ -155,16 +202,15 @@ export default function WalletButton() {
               </button>
             </div>
 
-            {mobile && !inApp && (
+            {mobile && (
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-3 mb-4">
                 <p className="text-blue-300/80 text-xs leading-relaxed">
-                  Tapping a wallet opens this page inside that wallet's app, where you can connect and add the token.
+                  Tapping a wallet opens this page inside that wallet's app, where you connect and add the token.
                 </p>
               </div>
             )}
 
             <div className="flex flex-col gap-2">
-              {/* Trust Wallet — always pinned first */}
               <button
                 onClick={connectTrust}
                 className="w-full flex items-center gap-4 px-4 py-3 rounded-2xl hover:bg-white/10 transition-colors text-left border border-white/5"
@@ -176,7 +222,6 @@ export default function WalletButton() {
                 </div>
               </button>
 
-              {/* Native adapters in the middle, WalletConnect lands last via ORDER */}
               {sortedWallets.map((w) => (
                 <button
                   key={w.adapter.name}
@@ -199,10 +244,6 @@ export default function WalletButton() {
                 </button>
               ))}
             </div>
-
-            <p className="text-white/20 text-xs text-center mt-5">
-              By connecting you agree to our terms of service
-            </p>
           </div>
         </div>
       )}

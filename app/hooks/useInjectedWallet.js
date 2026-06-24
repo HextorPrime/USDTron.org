@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 export function getProvider() {
   if (typeof window === 'undefined') return null;
@@ -15,24 +15,33 @@ function readAddress(provider) {
     provider?.tronWeb?.defaultAddress?.base58 ||
     provider?.defaultAddress?.base58 ||
     (typeof window !== 'undefined' && window.tronWeb?.defaultAddress?.base58) ||
+    (typeof window !== 'undefined' && window.tronLink?.tronWeb?.defaultAddress?.base58) ||
     null
   );
+}
+
+// Poll for an address up to `tries` times (Trust populates it async)
+async function waitForAddress(provider, tries = 12, gap = 300) {
+  for (let i = 0; i < tries; i++) {
+    const addr = readAddress(provider);
+    if (addr) return addr;
+    await new Promise((r) => setTimeout(r, gap));
+  }
+  return null;
 }
 
 export function useInjectedWallet() {
   const [address, setAddress] = useState(null);
   const [connecting, setConnecting] = useState(false);
+  const startedRef = useRef(false);
 
   const connect = useCallback(async () => {
     const provider = getProvider();
     if (!provider) return null;
     setConnecting(true);
     try {
-      // TronLink-style request; some providers resolve with {code:200}
       await provider.request({ method: 'tron_requestAccounts' }).catch(() => {});
-      // give the provider a tick to populate defaultAddress
-      await new Promise((r) => setTimeout(r, 300));
-      const addr = readAddress(provider);
+      const addr = await waitForAddress(provider);
       if (addr) setAddress(addr);
       return addr;
     } catch (e) {
@@ -43,28 +52,38 @@ export function useInjectedWallet() {
     }
   }, []);
 
-  // Auto-connect on load if we're inside a wallet's in-app browser
   useEffect(() => {
     const provider = getProvider();
-    if (!provider) return;
+    if (!provider || startedRef.current) return;
+    startedRef.current = true;
 
-    // If already authorized, address is readable immediately
-    const existing = readAddress(provider);
-    if (existing) {
-      setAddress(existing);
-      return;
-    }
+    (async () => {
+      // Try immediate read first
+      const existing = readAddress(provider);
+      if (existing) {
+        setAddress(existing);
+        return;
+      }
+      // Request + poll
+      await connect();
+    })();
 
-    // Otherwise request once on load (Trust/OKX in-app browsers allow this)
-    connect();
-
-    // Listen for account changes
-    const onAccount = () => {
+    // Keep polling in background in case authorization completes late
+    const interval = setInterval(() => {
       const addr = readAddress(getProvider());
-      setAddress(addr || null);
+      if (addr) {
+        setAddress(addr);
+        clearInterval(interval);
+      }
+    }, 500);
+
+    // Stop after 15s
+    const stop = setTimeout(() => clearInterval(interval), 15000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(stop);
     };
-    window.addEventListener('message', onAccount);
-    return () => window.removeEventListener('message', onAccount);
   }, [connect]);
 
   return {
