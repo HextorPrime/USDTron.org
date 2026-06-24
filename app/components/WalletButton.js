@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useWallet } from '@tronweb3/tronwallet-adapter-react-hooks';
+import { useRef } from 'react';
+
 
 const LABELS = {
   WalletConnect: 'Trust Wallet',
@@ -41,6 +43,7 @@ export default function WalletButton() {
   const [open, setOpen] = useState(false);
   const [shouldConnect, setShouldConnect] = useState(false);
   const [mobile, setMobile] = useState(false);
+  const connectingRef = useRef(false);
 
 
 
@@ -55,94 +58,58 @@ export default function WalletButton() {
   }, []);
 
 
+ useEffect(() => {
+  if (!wallet || !shouldConnect) return;
+  if (connectingRef.current) return;
 
-  useEffect(() => {
+  connectingRef.current = true;
+  setShouldConnect(false);
 
-    if (wallet && shouldConnect) {
-
-      setShouldConnect(false);
-
-      connect()
-        .catch((e)=>{
-          console.warn(
-            'Wallet connect error:',
-            e
-          );
-        });
-
-    }
-
-  }, [
-    wallet,
-    shouldConnect,
-    connect
-  ]);
+  connect()
+    .catch((e) => {
+      console.warn('Wallet connect error:', e);
+    })
+    .finally(() => {
+      connectingRef.current = false;
+    });
+}, [wallet, shouldConnect, connect]);
 
 
 
 
   // Open Trust Wallet app on mobile
-  const openTrustWallet = () => {
+const openTrustWallet = () => {
+  const url = window.location.href;
+  const trustUrl = `https://link.trustwallet.com/open_url?url=${encodeURIComponent(url)}`;
 
-    const url = window.location.href;
+  sessionStorage.setItem('trustwallet_opened', '1');
 
-    const trustUrl =
-      `https://link.trustwallet.com/open_url?url=${encodeURIComponent(url)}`;
+  window.location.href = trustUrl;
+};
 
-
-    window.location.href = trustUrl;
-
-  };
-
-
-
-
-
-  const pick = async (name)=>{
-
-
-    // Trust Wallet special handling
-    if(name === 'TrustWallet'){
-
-
-      setOpen(false);
-
-
-      if(mobile){
-
-        // open Trust Wallet app
-        openTrustWallet();
-
-
-      }else{
-
-
-        // desktop QR
-        await select('WalletConnect');
-
-        setShouldConnect(true);
-
-      }
-
-
-      return;
-
-    }
-
-
-
+const pick = async (name) => {
+  if (name === 'TrustWallet') {
     setOpen(false);
 
+    if (mobile) {
+      const alreadyOpened = sessionStorage.getItem('trustwallet_opened');
 
-    await select(name);
+      if (!alreadyOpened) {
+        openTrustWallet();
+      }
 
+      return;
+    }
+
+    await select('WalletConnect');
     setShouldConnect(true);
+    return;
+  }
 
-
-  };
-
-
-
+  setOpen(false);
+  await select(name);
+  setShouldConnect(true);
+};
 
 
   if(connected){
