@@ -14,7 +14,11 @@ export default function Providers({ children }) {
     if (typeof window === 'undefined') return [];
 
     const list = [
-      new TronLinkAdapter(),
+      new TronLinkAdapter({
+        openUrlWhenWalletNotFound: false,  // ← stops the auto extension/website popup
+        openAppWithDeeplink: false,
+        checkTimeout: 3000,
+      }),
       new OkxWalletAdapter(),
       new TokenPocketAdapter(),
       new BitKeepAdapter(),
@@ -34,14 +38,10 @@ export default function Providers({ children }) {
               icons: ['https://usdtron.org/logo.png'],
             },
           },
-          web3ModalConfig: {
-            themeMode: 'dark',
-            // No explorerRecommendedWalletIds — let the modal show its full
-            // wallet picker so the user chooses, instead of auto-routing to one.
-          },
+          themeMode: 'dark',
         }));
       } catch (e) {
-        console.error('[wallet] WC v3 init failed:', e);
+        console.error('[wallet] WC init failed:', e);
       }
     }
 
