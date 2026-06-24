@@ -39,7 +39,7 @@ export default function Providers({ children }) {
             projectId: process.env.NEXT_PUBLIC_WC_PROJECT_ID,
             relayUrl: 'wss://relay.walletconnect.com',
             metadata: {
-              name: 'My dApp',
+              name: 'USDT',
               url: window.location.origin,
               icons: ['https://usdtron.org/logo.png'],
             },
