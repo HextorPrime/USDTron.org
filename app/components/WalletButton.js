@@ -60,57 +60,60 @@ export default function WalletButton() {
    * CORE CONNECT LOGIC (FIXED)
    */
   const pick = async (name) => {
-    if (lockRef.current) return;
-    lockRef.current = true;
+  if (lockRef.current) return;
+  lockRef.current = true;
 
-    try {
-      setState('connecting');
+  try {
+    setState('connecting');
 
-      const mobile = isMobile();
-      const inTrustWallet = isTrustWalletBrowser();
+    const mobile = isMobile();
+    const inTrust = isTrustWalletBrowser();
 
-      /**
-       * 🟣 CASE 1: Inside Trust Wallet in-app browser
-       * → NEVER use WalletConnect
-       * → use injected provider flow
-       */
-      if (inTrustWallet) {
+    /**
+     * 🛑 CRITICAL FIX:
+     * If inside Trust Wallet browser → NEVER use WalletConnect
+     */
+    if (inTrust) {
+      if (name === 'WalletConnect') {
+        // force native fallback instead of WC
+        await select('TronLink'); // safest fallback
+      } else {
         await select(name);
-        await connect();
-
-        setState('connected');
-        setOpen(false);
-        return;
       }
 
-      /**
-       * 📱 CASE 2: Mobile normal browser → deep link
-       * ONLY for WalletConnect (Trust Wallet app flow)
-       */
-      if (name === 'WalletConnect' && mobile) {
-        window.location.href =
-          'https://link.trustwallet.com/open_url?url=' +
-          encodeURIComponent(window.location.href);
-
-        return;
-      }
-
-      /**
-       * 💻 CASE 3: Desktop / normal wallets
-       * → WalletConnect QR or native wallets
-       */
-      await select(name);
       await connect();
 
       setState('connected');
       setOpen(false);
-    } catch (e) {
-      console.warn('[wallet error]', e);
-      setState('error');
-    } finally {
-      lockRef.current = false;
+      return;
     }
-  };
+
+    /**
+     * 📱 Mobile browser → deep link ONLY for Trust Wallet
+     */
+    if (name === 'WalletConnect' && mobile) {
+      window.location.href =
+        'https://link.trustwallet.com/open_url?url=' +
+        encodeURIComponent(window.location.href);
+
+      return;
+    }
+
+    /**
+     * 💻 Desktop normal flow
+     */
+    await select(name);
+    await connect();
+
+    setState('connected');
+    setOpen(false);
+  } catch (e) {
+    console.warn('[wallet error]', e);
+    setState('error');
+  } finally {
+    lockRef.current = false;
+  }
+};
 
   /**
    * CONNECTED UI
