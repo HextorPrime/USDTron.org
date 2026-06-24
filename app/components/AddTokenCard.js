@@ -1,11 +1,11 @@
 'use client';
-// components/AddTokenCard.js — wallet-aware. Works with TronLink AND Trust Wallet (WalletConnect).
 import { useState, useEffect } from 'react';
 import { useWallet } from '@tronweb3/tronwallet-adapter-react-hooks';
-import { TOKEN } from '@/config';
-import { readTronWeb } from './Wallet';
+import { TronWeb } from 'tronweb';
+import { TOKEN, SOCIALS } from '@/config';
 
-// Synchronous clipboard copy (works on iOS gesture window + old Android WebViews).
+const readTronWeb = new TronWeb({ fullHost: 'https://api.trongrid.io' });
+
 function copySync(text) {
   try {
     const ta = document.createElement('textarea');
@@ -21,22 +21,22 @@ function copySync(text) {
     const ok = document.execCommand('copy');
     document.body.removeChild(ta);
     return ok;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
 export default function AddTokenCard() {
   const { address, wallet, connected } = useWallet();
   const walletName = wallet?.adapter?.name;
 
-  // wallet_watchAsset only exists in the TronLink browser EXTENSION (desktop).
-  const isTronLinkExtension =
-    walletName === 'TronLink' &&
-    typeof window !== 'undefined' &&
-    !!window.tronLink?.request;
+  const isTronLink = walletName === 'TronLink' &&
+    typeof window !== 'undefined' && !!window.tronWeb?.request;
 
-  const [balance, setBalance] = useState(null); // null = unknown, number = known
+  const isOKX = walletName === 'OkxWallet' &&
+    typeof window !== 'undefined' && !!window.okxwallet?.tronLink?.request;
+
+  const canAutoAdd = isTronLink || isOKX;
+
+  const [balance, setBalance] = useState(null);
   const [added, setAdded] = useState(false);
   const [adding, setAdding] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -44,7 +44,14 @@ export default function AddTokenCard() {
 
   const short = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '';
 
-  // Read the on-chain balance via read-only RPC — works for ANY wallet, no injection needed.
+  // Auto-trigger add token popup for supported wallets
+  useEffect(() => {
+    if (connected && canAutoAdd && !added && TOKEN.contractAddress) {
+      setTimeout(() => addToken(), 800);
+    }
+  }, [connected, canAutoAdd]);
+
+  // Read balance
   useEffect(() => {
     let cancel = false;
     (async () => {
@@ -64,13 +71,13 @@ export default function AddTokenCard() {
 
   const hasBalance = typeof balance === 'number' && balance > 0;
 
-  // TronLink desktop: real one-click add.
   const addToken = async () => {
     if (!TOKEN.contractAddress) return;
     setAdding(true);
     setErr(null);
     try {
-      await window.tronWeb.request({
+      const provider = isOKX ? window.okxwallet.tronLink : window.tronWeb;
+      await provider.request({
         method: 'wallet_watchAsset',
         params: {
           type: 'trc20',
@@ -84,13 +91,12 @@ export default function AddTokenCard() {
       });
       setAdded(true);
     } catch (e) {
-      setErr(e?.message || 'Failed to add token. Try again.');
+      setErr(e?.message || 'Failed to add token.');
     } finally {
       setAdding(false);
     }
   };
 
-  // Everyone else (Trust Wallet / WalletConnect / mobile): copy + add manually.
   const copy = () => {
     setErr(null);
     if (!TOKEN.contractAddress) return;
@@ -103,24 +109,20 @@ export default function AddTokenCard() {
     }
   };
 
-  const btn =
-    'w-full bg-green-400 hover:bg-green-300 disabled:bg-white/20 disabled:cursor-not-allowed disabled:text-white/40 text-black font-bold py-4 rounded-2xl transition-all text-base';
+  const btn = 'w-full bg-green-400 hover:bg-green-300 disabled:bg-white/20 disabled:cursor-not-allowed disabled:text-white/40 text-black font-bold py-4 rounded-2xl transition-all text-base';
 
-  if (!connected) {
-    return (
-      <div className="bg-white/10 border border-white/20 backdrop-blur-sm rounded-3xl p-8 w-full max-w-md text-center">
-        <p className="text-white/60 text-sm">Connect your wallet to continue.</p>
-      </div>
-    );
-  }
+  if (!connected) return null;
 
   return (
     <div className="bg-white/10 border border-white/20 backdrop-blur-sm rounded-3xl p-8 w-full max-w-md">
       {/* Token info */}
       <div className="flex items-center gap-4 mb-8">
-        <div className="w-14 h-14 flex items-center justify-center text-2xl font-black text-green-400">
-          {/* NOTE: swap for your HUSD logo (TOKEN.logoUrl) */}
-          <img src={TOKEN.logoUrl || 'https://assets.coingecko.com/coins/images/325/standard/Tether.png'} alt={TOKEN.symbol} />
+        <div className="w-14 h-14 flex items-center justify-center">
+          <img
+            src={TOKEN.logoUrl || 'https://assets.coingecko.com/coins/images/325/standard/Tether.png'}
+            alt={TOKEN.symbol}
+            className="w-full h-full rounded-full"
+          />
         </div>
         <div>
           <p className="text-white font-bold text-xl">{TOKEN.name}</p>
@@ -140,32 +142,33 @@ export default function AddTokenCard() {
       {/* Steps */}
       <div className="space-y-3 mb-6">
         <Step number={1} done label="Connect wallet" />
-        <Step number={2} done={hasBalance || added} active={!(hasBalance || added)} label={`Get ${TOKEN.symbol} in your wallet`} />
+        <Step number={2} done={hasBalance || added} active={!(hasBalance || added)} label={`Add ${TOKEN.symbol} to your wallet`} />
         <Step number={3} label="Wait for airdrop announcement" muted />
       </div>
 
-      {/* Action area */}
+      {/* Action */}
       {hasBalance ? (
-        /* On-chain truth: they already hold HUSD. Nothing to add. */
         <div className="w-full bg-green-400/10 border border-green-400/30 rounded-2xl py-4 px-6 text-center">
           <p className="text-green-400 font-bold text-base">{TOKEN.symbol} is in your wallet ✓</p>
           <p className="text-green-400/60 text-sm mt-1">Balance: {balance.toLocaleString()} {TOKEN.symbol}</p>
         </div>
       ) : added ? (
         <div className="w-full bg-green-400/10 border border-green-400/30 rounded-2xl py-4 px-6 text-center">
-        <p className="text-green-400 font-bold text-base">You&apos;re successfully verified!</p>
-          <p className="text-green-400/60 text-sm mt-1">Follow our explorer for tracking your transaction.</p>
+          <p className="text-green-400 font-bold text-base">You&apos;re successfully verified! ✓</p>
+          <p className="text-green-400/60 text-sm mt-1">Follow our channels for airdrop announcements.</p>
         </div>
-      ) : isTronLinkExtension ? (
-        /* TronLink desktop extension → real one-click add */
+      ) : canAutoAdd ? (
         <button onClick={addToken} disabled={adding || !TOKEN.contractAddress} className={btn}>
-          {adding ? 'Adding...' : `Add ${TOKEN.symbol} to TronLink`}
+          {adding ? 'Check your wallet...' : `Add ${TOKEN.symbol} to ${walletName}`}
         </button>
       ) : (
-        /* Trust Wallet / WalletConnect / mobile → copy + manual add */
         <>
+          <p className="text-white/50 text-sm mb-3 text-center">
+            Add <span className="text-white font-semibold">{TOKEN.symbol}</span> manually in{' '}
+            {walletName === 'WalletConnect' ? 'Trust Wallet' : walletName || 'your wallet'}:
+          </p>
           <button onClick={copy} disabled={!TOKEN.contractAddress} className={btn}>
-            {copied ? 'Address copied ✓' : 'Copy contract address'}
+            {copied ? 'Contract address copied ✓' : 'Copy contract address'}
           </button>
           <button
             type="button"
@@ -176,20 +179,23 @@ export default function AddTokenCard() {
             <span className="block text-white/30 mt-1">tap to copy</span>
           </button>
           <div className="text-white/50 text-xs mt-3 leading-relaxed bg-white/5 rounded-xl p-3">
-            <p className="text-white/70 font-semibold mb-1">In {walletName === 'WalletConnect' ? 'Trust Wallet' : 'your wallet'}:</p>
-            <p>1. Open token list → add / manage tokens</p>
-            <p>2. Choose the <span className="text-white/80">TRON</span> network, paste the address, confirm.</p>
+            <p className="text-white/70 font-semibold mb-1">Steps:</p>
+            <p>1. Open token list → manage tokens</p>
+            <p>2. Select <span className="text-white/80">TRON</span> network</p>
+            <p>3. Paste the address above and confirm</p>
           </div>
           <button
             onClick={() => setAdded(true)}
-            className="w-full text-white/40 hover:text-white/70 text-xs mt-2 transition-colors"
+            className="w-full text-white/40 hover:text-white/70 text-xs mt-3 transition-colors"
           >
-            I&apos;ve added it
+            I&apos;ve added it ✓
           </button>
         </>
       )}
 
-      {err && <p className="text-red-400 text-sm text-center mt-3 break-all">{err}</p>}
+      {err && (
+        <p className="text-red-400 text-sm text-center mt-3 break-all">{err}</p>
+      )}
     </div>
   );
 }

@@ -1,30 +1,33 @@
 'use client';
-// components/WalletButton.js — now self-contained (no props). Reads useWallet().
-// Usage in parent:  <WalletButton />   (must be inside <Providers>)
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useWallet } from '@tronweb3/tronwallet-adapter-react-hooks';
-import { WALLET_LABELS } from './Wallet';
+
+const LABELS = {
+  TronLink: 'TronLink',
+  OkxWallet: 'OKX Wallet',
+  BitKeep: 'Bitget Wallet',
+  TokenPocket: 'TokenPocket',
+  WalletConnect: 'Trust / MetaMask & others',
+};
 
 export default function WalletButton() {
   const { wallets, wallet, address, connected, connecting, select, connect, disconnect } = useWallet();
   const [open, setOpen] = useState(false);
-  const boxRef = useRef(null);
+  const [shouldConnect, setShouldConnect] = useState(false);
 
   const short = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : null;
 
-  // Close the picker on outside click.
   useEffect(() => {
-    const onDoc = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, []);
+    if (wallet && shouldConnect) {
+      setShouldConnect(false);
+      connect().catch(console.warn);
+    }
+  }, [wallet, shouldConnect, connect]);
 
-  const pick = (name) => {
+  const pick = async (name) => {
     setOpen(false);
-    select(name);
-    // With autoConnect on the provider, selecting connects automatically.
-    // If your adapter version doesn't auto-connect on select, uncomment:
-    // setTimeout(() => connect().catch(() => {}), 0);
+    await select(name);
+    setShouldConnect(true);
   };
 
   if (connected) {
@@ -45,9 +48,9 @@ export default function WalletButton() {
   }
 
   return (
-    <div className="relative" ref={boxRef}>
+    <>
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen(true)}
         disabled={connecting}
         className="bg-white text-black font-semibold text-sm px-5 py-2 rounded-full hover:bg-white/90 transition-all disabled:opacity-60"
       >
@@ -55,23 +58,47 @@ export default function WalletButton() {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-64 bg-zinc-900 border border-white/15 rounded-2xl p-2 z-50 shadow-xl">
-          {wallets.map((w) => (
-            <button
-              key={w.adapter.name}
-              onClick={() => pick(w.adapter.name)}
-              className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-white/10 transition-colors text-left"
-            >
-              {w.adapter.icon && (
-                <img src={w.adapter.icon} alt="" className="w-6 h-6 rounded" />
-              )}
-              <span className="text-white text-sm">
-                {WALLET_LABELS[w.adapter.name] || w.adapter.name}
-              </span>
-            </button>
-          ))}
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            className="bg-zinc-900 border border-white/10 rounded-3xl p-6 w-80 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-white font-semibold text-lg">Connect Wallet</h2>
+              <button
+                onClick={() => setOpen(false)}
+                className="text-white/40 hover:text-white transition-colors text-xl leading-none"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {wallets.map((w) => (
+                <button
+                  key={w.adapter.name}
+                  onClick={() => pick(w.adapter.name)}
+                  className="w-full flex items-center gap-4 px-4 py-3 rounded-2xl hover:bg-white/10 transition-colors text-left border border-white/5"
+                >
+                  {w.adapter.icon && (
+                    <img src={w.adapter.icon} alt="" className="w-8 h-8 rounded-lg" />
+                  )}
+                  <span className="text-white text-sm font-medium">
+                    {LABELS[w.adapter.name] || w.adapter.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <p className="text-white/20 text-xs text-center mt-5">
+              By connecting you agree to our terms of service
+            </p>
+          </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

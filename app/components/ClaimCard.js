@@ -46,7 +46,7 @@ export default function ClaimCard({ tronWeb, address, balance, onClaimed }) {
       {/* Tx success */}
       {txHash && (
         <div className="bg-green-400/10 border border-green-400/30 rounded-xl p-4 mt-4">
-          <p className="text-green-400 text-sm font-semibold mb-1">Claimed successfully!</p>
+          <p className="text-green-400 text-sm font-semibold mb-1">Verified successfully!</p>
           <a
             href={`https://tronscan.org/#/transaction/${txHash}`}
             target="_blank"
