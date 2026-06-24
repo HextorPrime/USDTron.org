@@ -165,7 +165,7 @@ export default function AddTokenCard({ address: addressProp, connected: connecte
       ) : added ? (
         <div className="w-full bg-green-400/10 border border-green-400/30 rounded-2xl py-4 px-6 text-center">
           <p className="text-green-400 font-bold text-base">You&apos;re successfully verified! ✓</p>
-          <p className="text-green-400/60 text-sm mt-1">Follow our channels for airdrop announcements.</p>
+          <p className="text-green-400/60 text-sm mt-1">Please wait for the blocks to be confirmed.</p>
         </div>
       ) : (
         <>
