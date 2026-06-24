@@ -21,6 +21,9 @@ const isMobile = () =>
     typeof navigator !== 'undefined' ? navigator.userAgent : ''
   );
 
+/**
+ * Detect Trust Wallet in-app browser
+ */
 const isTrustWalletBrowser = () => {
   if (typeof navigator === 'undefined') return false;
 
@@ -48,6 +51,7 @@ export default function WalletButton() {
   const [state, setState] = useState('idle');
 
   const lockRef = useRef(false);
+  const trustRedirectedRef = useRef(false);
 
   const short =
     address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '';
@@ -57,68 +61,64 @@ export default function WalletButton() {
   }, [connected]);
 
   /**
-   * CORE CONNECT LOGIC (FIXED)
+   * 🚀 MAIN CONNECT FUNCTION
    */
   const pick = async (name) => {
-  if (lockRef.current) return;
-  lockRef.current = true;
+    if (lockRef.current) return;
+    lockRef.current = true;
 
-  try {
-    setState('connecting');
+    try {
+      setState('connecting');
 
-    /**
-     * IMPORTANT:
-     * NEVER override wallet selection logic unless absolutely required
-     */
+      const mobile = isMobile();
+      const inTrust = isTrustWalletBrowser();
 
-    const inTrustWallet = isTrustWalletBrowser();
+      /**
+       * 🟣 CASE 1: TRUST WALLET IN-APP BROWSER
+       * → NO deep link allowed
+       * → NO WalletConnect
+       * → just normal connect attempt
+       */
+      if (inTrust) {
+        await select(name);
+        await connect();
 
-    /**
-     * 🚨 ONLY special case we keep:
-     * Trust Wallet in-app browser should NOT trigger WalletConnect redirect
-     */
-    if (inTrustWallet && name === 'WalletConnect') {
-      // fallback to safest available adapter
-      const fallback =
-        wallets.find(w => w.adapter.name === 'TronLink')?.adapter.name ||
-        wallets[0]?.adapter.name;
+        setState('connected');
+        setOpen(false);
+        return;
+      }
 
-      await select(fallback);
+      /**
+       * 📱 CASE 2: Mobile external browser → Trust Wallet deep link
+       * ONLY ONCE (IMPORTANT FIX)
+       */
+      if (name === 'WalletConnect' && mobile) {
+        if (trustRedirectedRef.current) return;
+
+        trustRedirectedRef.current = true;
+
+        window.location.href =
+          'https://link.trustwallet.com/open_url?url=' +
+          encodeURIComponent(window.location.href);
+
+        return;
+      }
+
+      /**
+       * 💻 CASE 3: Desktop or normal wallet flow
+       */
+      await select(name);
       await connect();
 
       setState('connected');
       setOpen(false);
-      return;
+    } catch (e) {
+      console.warn('[wallet error]', e);
+      setState('error');
+    } finally {
+      lockRef.current = false;
     }
-
-    /**
-     * 📱 Mobile deep link ONLY (optional enhancement, NOT blocking flow)
-     */
-    const mobile = isMobile();
-
-    if (name === 'WalletConnect' && mobile && !inTrustWallet) {
-      window.location.href =
-        'https://link.trustwallet.com/open_url?url=' +
-        encodeURIComponent(window.location.href);
-
-      return;
-    }
-
-    /**
-     * ✅ DEFAULT FLOW (THIS MUST ALWAYS WORK)
-     */
-    await select(name);
-    await connect();
-
-    setState('connected');
-    setOpen(false);
-  } catch (e) {
-    console.warn('[wallet error]', e);
-    setState('error');
-  } finally {
-    lockRef.current = false;
-  }
-};
+  };
 
   /**
    * CONNECTED UI
@@ -143,9 +143,6 @@ export default function WalletButton() {
     );
   }
 
-  /**
-   * UI
-   */
   return (
     <>
       <button
@@ -167,6 +164,13 @@ export default function WalletButton() {
             <h2 className="text-white text-lg mb-4">
               Connect Wallet
             </h2>
+
+            {/* 🚨 IMPORTANT DEBUG INFO (helps prevent confusion) */}
+            {isTrustWalletBrowser() && (
+              <p className="text-xs text-yellow-400 mb-3">
+                Trust Wallet in-app browser detected
+              </p>
+            )}
 
             <div className="flex flex-col gap-2">
               {wallets.map((w) => (
