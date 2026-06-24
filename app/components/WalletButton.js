@@ -21,9 +21,6 @@ const isMobile = () =>
     typeof navigator !== 'undefined' ? navigator.userAgent : ''
   );
 
-/**
- * Detect Trust Wallet in-app browser
- */
 const isTrustWalletBrowser = () => {
   if (typeof navigator === 'undefined') return false;
 
@@ -32,7 +29,7 @@ const isTrustWalletBrowser = () => {
   return (
     ua.includes('trust') ||
     ua.includes('trustwallet') ||
-    (typeof window !== 'undefined' && window.ethereum?.isTrust === true)
+    (typeof window !== 'undefined' && window.ethereum?.isTrust)
   );
 };
 
@@ -52,41 +49,27 @@ export default function WalletButton() {
   const [mobile, setMobile] = useState(false);
 
   const lockRef = useRef(false);
-  const trustBlockRef = useRef(false);
 
   const short = address
     ? `${address.slice(0, 6)}...${address.slice(-4)}`
     : null;
 
-  /**
-   * Detect environment once
-   */
   useEffect(() => {
     setMobile(isMobile());
-
-    // 🚨 if already inside Trust Wallet browser, block redirects completely
-    if (isTrustWalletBrowser()) {
-      trustBlockRef.current = true;
-    }
   }, []);
 
   /**
-   * CONNECT STAGE (strict + loop-safe)
+   * CONNECT ONLY (no redirects here)
    */
   useEffect(() => {
     if (flow !== 'connecting') return;
     if (!wallet) return;
     if (lockRef.current) return;
 
-    // 🚨 extra safety: never auto-connect inside Trust Wallet browser
-    if (isTrustWalletBrowser() || trustBlockRef.current) return;
-
     lockRef.current = true;
 
     connect()
-      .then(() => {
-        setFlow('connected');
-      })
+      .then(() => setFlow('connected'))
       .catch((e) => {
         console.warn('Wallet connect error:', e);
         setFlow('error');
@@ -96,21 +79,14 @@ export default function WalletButton() {
       });
   }, [flow, wallet, connect]);
 
-  /**
-   * Sync external wallet state
-   */
   useEffect(() => {
-    if (connected) {
-      setFlow('connected');
-    }
+    if (connected) setFlow('connected');
   }, [connected]);
 
   /**
-   * Open Trust Wallet deep link
+   * OPEN TRUST WALLET (ONLY OUTSIDE TRUST APP)
    */
   const openTrustWallet = () => {
-    setFlow('redirecting');
-
     const url = window.location.href;
 
     const trustUrl =
@@ -121,28 +97,42 @@ export default function WalletButton() {
   };
 
   /**
-   * WALLET SELECTOR (STATE MACHINE ENTRY POINT)
+   * MAIN WALLET HANDLER
    */
   const selectWallet = async (name) => {
     setFlow('selecting');
 
-    if (name === 'TrustWallet') {
-      // 🚨 HARD STOP LOOP CONDITION
-      if (trustBlockRef.current || isTrustWalletBrowser()) {
-        setFlow('idle');
-        return;
-      }
+    const inTrustApp = isTrustWalletBrowser();
 
+    /**
+     * 🚨 CRITICAL RULE:
+     * If inside Trust Wallet app → NEVER redirect again
+     */
+    if (inTrustApp && name === 'TrustWallet') {
+      setFlow('connecting');
+      await select('WalletConnect');
+      return;
+    }
+
+    /**
+     * TRUST WALLET FLOW
+     */
+    if (name === 'TrustWallet') {
       if (mobile) {
+        setFlow('redirecting');
         openTrustWallet();
         return;
       }
 
+      // desktop fallback = QR
       await select('WalletConnect');
       setFlow('connecting');
       return;
     }
 
+    /**
+     * ALL OTHER WALLETS
+     */
     await select(name);
     setFlow('connecting');
   };
@@ -171,9 +161,6 @@ export default function WalletButton() {
     );
   }
 
-  /**
-   * UI
-   */
   return (
     <>
       <button
@@ -206,7 +193,7 @@ export default function WalletButton() {
               </button>
             </div>
 
-            {mobile && (
+            {mobile && !isTrustWalletBrowser() && (
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-3 mb-4">
                 <p className="text-blue-300 text-xs font-semibold">
                   📱 Mobile detected
@@ -235,7 +222,7 @@ export default function WalletButton() {
                   </span>
 
                   <span className="text-green-400/60 text-xs">
-                    {mobile ? 'Open App' : 'WalletConnect'}
+                    {isMobile() ? 'Open App' : 'WalletConnect QR'}
                   </span>
                 </div>
               </button>
