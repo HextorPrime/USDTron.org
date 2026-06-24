@@ -1,4 +1,5 @@
 'use client';
+import { useState, useEffect } from 'react';
 import { useWallet } from '@tronweb3/tronwallet-adapter-react-hooks';
 import { useInjectedWallet } from '@/app/hooks/useInjectedWallet';
 import WalletButton from '@/app/components/WalletButton';
@@ -9,26 +10,41 @@ export default function Home() {
   const { address: adapterAddress, connected: adapterConnected } = useWallet();
   const { injectedAddress, injectedConnected } = useInjectedWallet();
 
-  // Either source counts as connected
   const connected = adapterConnected || injectedConnected;
   const address = adapterAddress || injectedAddress;
 
+  // --- TEMP DEBUG (delete once mobile WC is confirmed) ---
+  const [mounted, setMounted] = useState(false);
+  const [debug, setDebug] = useState('');
+
+  useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const tick = () => setDebug(JSON.stringify({
+      ua: navigator.userAgent.slice(0, 30),
+      trustTron: !!window.trustwallet?.tronLink,
+      tronLink: !!window.tronLink,
+      tronWeb: !!window.tronWeb,
+      eth: !!window.ethereum,
+      ethTrust: !!window.ethereum?.isTrust,
+      addr: address || '-',
+    }));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [mounted, address]);
+  // --- END DEBUG ---
+
   return (
     <main className="min-h-screen bg-[#050f0a] text-white flex flex-col">
+      {/* TEMP DEBUG */}
+      {mounted && (
+        <div className="fixed top-0 left-0 right-0 bg-black text-green-400 text-[10px] font-mono p-2 z-[200] break-all">
+          {debug}
+        </div>
+      )}
 
-         {/* TEMP DEBUG — paste here */}
-      <div className="fixed top-0 left-0 right-0 bg-black text-green-400 text-[10px] font-mono p-2 z-[200] break-all">
-        {typeof window !== 'undefined' && JSON.stringify({
-          ua: navigator.userAgent.slice(0, 40),
-          trust: !!window.trustwallet,
-          trustTron: !!window.trustwallet?.tronLink,
-          tronLink: !!window.tronLink,
-          tronWeb: !!window.tronWeb,
-          eth: !!window.ethereum,
-          ethTrust: !!window.ethereum?.isTrust,
-        })}
-      </div>
-      
       {/* Nav */}
       <nav className="flex items-center justify-between px-8 py-5 border-b border-white/10">
         <div className="flex items-center gap-2">
