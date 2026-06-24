@@ -21,6 +21,21 @@ const isMobile = () =>
     typeof navigator !== 'undefined' ? navigator.userAgent : ''
   );
 
+/**
+ * Detect Trust Wallet in-app browser
+ */
+const isTrustWalletBrowser = () => {
+  if (typeof navigator === 'undefined') return false;
+
+  const ua = navigator.userAgent.toLowerCase();
+
+  return (
+    ua.includes('trust') ||
+    ua.includes('trustwallet') ||
+    (typeof window !== 'undefined' && window.ethereum?.isTrust === true)
+  );
+};
+
 export default function WalletButton() {
   const {
     wallets,
@@ -33,29 +48,38 @@ export default function WalletButton() {
     disconnect,
   } = useWallet();
 
-  // state machine (NO FLAGS, NO LOOPS)
-  const [flow, setFlow] = useState('idle'); 
-  // idle | selecting | redirecting | connecting | connected | error
-
+  const [flow, setFlow] = useState('idle');
   const [mobile, setMobile] = useState(false);
 
   const lockRef = useRef(false);
+  const trustBlockRef = useRef(false);
 
   const short = address
     ? `${address.slice(0, 6)}...${address.slice(-4)}`
     : null;
 
+  /**
+   * Detect environment once
+   */
   useEffect(() => {
     setMobile(isMobile());
+
+    // 🚨 if already inside Trust Wallet browser, block redirects completely
+    if (isTrustWalletBrowser()) {
+      trustBlockRef.current = true;
+    }
   }, []);
 
   /**
-   * CONNECT STAGE (deterministic)
+   * CONNECT STAGE (strict + loop-safe)
    */
   useEffect(() => {
     if (flow !== 'connecting') return;
     if (!wallet) return;
     if (lockRef.current) return;
+
+    // 🚨 extra safety: never auto-connect inside Trust Wallet browser
+    if (isTrustWalletBrowser() || trustBlockRef.current) return;
 
     lockRef.current = true;
 
@@ -73,7 +97,7 @@ export default function WalletButton() {
   }, [flow, wallet, connect]);
 
   /**
-   * SYNC external wallet state → internal state
+   * Sync external wallet state
    */
   useEffect(() => {
     if (connected) {
@@ -81,6 +105,9 @@ export default function WalletButton() {
     }
   }, [connected]);
 
+  /**
+   * Open Trust Wallet deep link
+   */
   const openTrustWallet = () => {
     setFlow('redirecting');
 
@@ -93,10 +120,19 @@ export default function WalletButton() {
     window.location.href = trustUrl;
   };
 
+  /**
+   * WALLET SELECTOR (STATE MACHINE ENTRY POINT)
+   */
   const selectWallet = async (name) => {
     setFlow('selecting');
 
     if (name === 'TrustWallet') {
+      // 🚨 HARD STOP LOOP CONDITION
+      if (trustBlockRef.current || isTrustWalletBrowser()) {
+        setFlow('idle');
+        return;
+      }
+
       if (mobile) {
         openTrustWallet();
         return;
@@ -111,6 +147,9 @@ export default function WalletButton() {
     setFlow('connecting');
   };
 
+  /**
+   * CONNECTED UI
+   */
   if (flow === 'connected') {
     return (
       <div className="flex items-center gap-3">
@@ -132,6 +171,9 @@ export default function WalletButton() {
     );
   }
 
+  /**
+   * UI
+   */
   return (
     <>
       <button
