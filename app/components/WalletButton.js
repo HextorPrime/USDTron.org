@@ -3,17 +3,17 @@ import { useState, useEffect } from 'react';
 import { useWallet } from '@tronweb3/tronwallet-adapter-react-hooks';
 
 const LABELS = {
-  WalletConnect: 'Trust, MetaMask, OKX & more',
   TronLink: 'TronLink',
+  WalletConnect: 'Trust, MetaMask, OKX & more',
   OkxWallet: 'OKX Wallet',
   BitKeep: 'Bitget Wallet',
   TokenPocket: 'TokenPocket',
 };
 
-const ORDER = ['WalletConnect', 'TronLink', 'OkxWallet', 'BitKeep', 'TokenPocket'];
-const EXTENSION_ONLY = ['TronLink', 'OkxWallet', 'BitKeep', 'TokenPocket'];
+// TronLink first
+const ORDER = ['TronLink', 'WalletConnect', 'OkxWallet', 'BitKeep', 'TokenPocket'];
+const EXTENSION_ONLY = ['OkxWallet', 'BitKeep', 'TokenPocket'];
 
-// Evaluate immediately (not in useEffect) so first render is correct
 const detectMobile = () =>
   typeof navigator !== 'undefined' &&
   /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -22,7 +22,6 @@ export default function WalletButton() {
   const { wallets, wallet, address, connected, connecting, select, connect, disconnect } = useWallet();
   const [open, setOpen] = useState(false);
   const [shouldConnect, setShouldConnect] = useState(false);
-  // Initialize synchronously from a function so it's right on first paint
   const [mobile] = useState(detectMobile);
 
   const short = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : null;
@@ -42,7 +41,7 @@ export default function WalletButton() {
 
   const sortedWallets = [...wallets]
     .filter((w) => {
-      // On mobile browsers, extensions don't exist — only WalletConnect works
+      // On mobile browsers, extensions don't exist — hide them (keep TronLink + WalletConnect)
       if (mobile && EXTENSION_ONLY.includes(w.adapter.name)) return false;
       return true;
     })
